@@ -1,5 +1,5 @@
 import os
-from osgeo import ogr, gdal
+from osgeo import ogr, gdal, osr
 
 
 
@@ -20,12 +20,15 @@ class MorphometryExtractor():
         self.fnWse = "WSEDEM.tif"
         self.fnWd = "Water_Depth.tif"
         self.fnCrest = "crest.shp"
-        self.fnCrestBuf = "crestbuf.shp"
+        self.fnCrestBuf = "crestbuf"
         self.fnPolyPond = "polypond.shp"
+        self.fnPolyPondOut = "polypond"
         self.fnPolyBase = "polybase.shp"
+        self.fnPolyBaseOut = "polybase"
         self.fnPointUS = "pointus.shp"
         self.fnPointBase = "pointbase.shp"
         self.SetDrivers()
+        self.SetSpatialRef()
         self.nDams = self.GetDamCount()
 
     def BufferCrest(self):
@@ -35,20 +38,50 @@ class MorphometryExtractor():
         layer = source.GetLayer()
         if os.path.exists(self.fnCrestBuf):
             self.driverSHP.DeleteDataSource(self.fnCrestBuf)
-        outds = self.driverSHP.CreateDataSource(self.fnCrestBuf)
-        outlyr = outds.CreateLayer(self.fnCrestBuf, geom_type=ogr.wkbPolygon)
-        outDfn = outlyr.GetLayerDefn()
-        print 'starting buffer loop'
+        i=1
+
         for feature in layer:
+            outds = self.driverSHP.CreateDataSource(self.fnCrestBuf+str(i)+".shp")
+            outlyr = outds.CreateLayer(self.fnCrestBuf, srs=self.spatialRef, geom_type=ogr.wkbPolygon)
+            outDfn = outlyr.GetLayerDefn()
             ingeom = feature.GetGeometryRef()
             geomBuffer = ingeom.Buffer(0.3)
             outFeat = ogr.Feature(outDfn)
             outFeat.SetGeometry(geomBuffer)
             outlyr.CreateFeature(outFeat)
+            i += 1
 
+    def ClipRasters(self):
+        for i in range(1,self.nDams,1):
+            self.ClipRasterPolygon(self.fnDem, self.fnPolyPondOut+str(i)+".shp", "DEM_pond"+str(i)+".tif")
+            self.ClipRasterPolygon(self.fnDem, self.fnPolyBaseOut+str(i)+".shp", "DEM_base"+str(i)+".tif")
+            self.ClipRasterPolygon(self.fnDem, self.fnCrestBuf+str(i)+".shp", "DEM_crest"+str(i)+".tif")
+            self.ClipRasterPolygon(self.fnWse, self.fnPolyPondOut+str(i)+".shp", "WSE_pond"+str(i)+".tif")
+            self.ClipRasterPolygon(self.fnWse, self.fnPolyBaseOut+str(i)+".shp", "WSE_base"+str(i)+".tif")
+            self.ClipRasterPolygon(self.fnWse, self.fnCrestBuf+str(i)+".shp", "WSE_crest"+str(i)+".tif")
+            self.ClipRasterPolygon(self.fnWd, self.fnPolyPondOut+str(i)+".shp", "WD_pond"+str(i)+".tif")
+            self.ClipRasterPolygon(self.fnWd, self.fnPolyBaseOut+str(i)+".shp", "WD_base"+str(i)+".tif")
+            self.ClipRasterPolygon(self.fnWd, self.fnCrestBuf+str(i)+".shp", "WD_crest"+str(i)+".tif")
 
     def ClipRasterPolygon(self, rasterPath, polyPath, outPath):
-        os.system("gdalwarp -q -cutline " + polyPath + " -tr 0.1 0.1 -of GTiff " + rasterPath + " " + outPath)
+        os.system("gdalwarp -dstnodata -9999 -q -cutline " + polyPath + " -tr 0.1 0.1 -of GTiff " + rasterPath + " " + outPath)
+
+    def CreateClippingPolygons(self, inPath, outPath):
+        ds = self.driverSHP.Open(inPath)
+        if ds is None:
+            print 'layer not open'
+        lyr = ds.GetLayer()
+
+        i=1
+        for feature in lyr:
+            outds = self.driverSHP.CreateDataSource(outPath+str(i)+".shp")
+            outlyr = outds.CreateLayer(self.fnCrestBuf, srs=self.spatialRef, geom_type=ogr.wkbPolygon)
+            outDfn = outlyr.GetLayerDefn()
+            ingeom = feature.GetGeometryRef()
+            outFeat = ogr.Feature(outDfn)
+            outFeat.SetGeometry(ingeom)
+            outlyr.CreateFeature(outFeat)
+            i += 1
 
     def GetDamCount(self):
         source = self.driverSHP.Open(self.fnCrest)
@@ -59,6 +92,11 @@ class MorphometryExtractor():
 
     def SetDrivers(self):
         self.driverSHP = ogr.GetDriverByName('ESRI Shapefile')
+
+    def SetSpatialRef(self):
+        ds = self.driverSHP.Open(self.fnCrest)
+        lyr = ds.GetLayer()
+        self.spatialRef = lyr.GetSpatialRef()
 
 class CSVWriter():
 
