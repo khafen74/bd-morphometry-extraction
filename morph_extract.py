@@ -1,6 +1,5 @@
 import os
-from qgis.core import *
-from qgis.analysis import *
+from osgeo import ogr, gdal
 
 
 
@@ -11,9 +10,6 @@ fnPolyBase = "DEM.tif"
 fnPointUS = ""
 fnLineCrest= ""
 
-
-def ClipRasterPolygon(rasterPath, polyPath, outPath):
-    os.system("gdalwarp -q -cutline " + polyPath + " -tr 0.1 0.1 -of GTiff " + rasterPath + " " + outPath)
 
 class MorphometryExtractor():
 
@@ -29,27 +25,40 @@ class MorphometryExtractor():
         self.fnPolyBase = "polybase.shp"
         self.fnPointUS = "pointus.shp"
         self.fnPointBase = "pointbase.shp"
-        self.nDams = None
+        self.SetDrivers()
+        self.nDams = self.GetDamCount()
 
     def BufferCrest(self):
-        layer = QgsVectorLayer(self.fnCrest)
-        outLayer = QgsVectorLayer(self.fnCrestBuf)
-        iter = layer.getFeatures()
-        i = 1
-        for feature in iter:
-            geom = feature.geometry
-            buff = geom.buffer(0.3)
-            newFeat = QgsFeature()
-            newFeat.setGeometry(buff)
-            outLayer.addFeature(newFeat)
-            i += 1
+        source = self.driverSHP.Open(self.fnCrest)
+        if source is None:
+            print 'layer not open'
+        layer = source.GetLayer()
+        if os.path.exists(self.fnCrestBuf):
+            self.driverSHP.DeleteDataSource(self.fnCrestBuf)
+        outds = self.driverSHP.CreateDataSource(self.fnCrestBuf)
+        outlyr = outds.CreateLayer(self.fnCrestBuf, geom_type=ogr.wkbPolygon)
+        outDfn = outlyr.GetLayerDefn()
+        print 'starting buffer loop'
+        for feature in layer:
+            ingeom = feature.GetGeometryRef()
+            geomBuffer = ingeom.Buffer(0.3)
+            outFeat = ogr.Feature(outDfn)
+            outFeat.SetGeometry(geomBuffer)
+            outlyr.CreateFeature(outFeat)
+
 
     def ClipRasterPolygon(self, rasterPath, polyPath, outPath):
         os.system("gdalwarp -q -cutline " + polyPath + " -tr 0.1 0.1 -of GTiff " + rasterPath + " " + outPath)
 
     def GetDamCount(self):
-        layer = QgsVectorLayer(self.fnCrest)
-        self.nDams = layer.featureCount()
+        source = self.driverSHP.Open(self.fnCrest)
+        if source is None:
+            print 'layer not open'
+        layer = source.GetLayer()
+        return layer.GetFeatureCount()
+
+    def SetDrivers(self):
+        self.driverSHP = ogr.GetDriverByName('ESRI Shapefile')
 
 class CSVWriter():
 
@@ -61,3 +70,13 @@ class DamPoints():
         self.path = outPath
         self.fieldNames = ["cr_len_m", "pond_a_m2", "pond_v_m3", "p_wse", "b_wse"]
 
+#########################################################
+########################## RUN ##########################
+#########################################################
+
+path = r'F:\01_etal\Projects\Modeling\BeaverWaterStorage\wrk_Data\GIS_Data\PondSurveys\BridgeCreek\01_Processing\Test'
+print 'path set'
+extractor = MorphometryExtractor(path)
+print 'extractor initialized'
+extractor.BufferCrest()
+print 'buffer executed'
