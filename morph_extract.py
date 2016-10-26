@@ -1,5 +1,34 @@
 import os
 from osgeo import ogr, gdal, osr
+import numpy as np
+
+class CSVWriter():
+
+    def __init__(self, csvPath):
+        self.path = csvPath
+        self.colNames = None
+        self.nCols = None
+
+    def SetColNames(self, colNamesList):
+        self.colNames = colNamesList
+        self.nCols = len(self.colNames)
+
+    def WriteRow(self, rowData):
+        #do stuff here
+        print ''
+
+class DamPoints():
+
+    def __init__(self, outPath):
+        self.path = outPath
+        self.fieldNames = ["cr_len_m", "p_area_m2", "p_vol_m3", "p_wse", "b_wse", "p_slp_per", "cr_elev", "d_ht_m"]
+
+    def GetFieldNames(self):
+        return self.fieldNames
+
+    def WriteFieldValues(self, fieldData):
+        #do stuff here
+        print''
 
 class MorphometryExtractor():
 
@@ -15,8 +44,13 @@ class MorphometryExtractor():
         self.fnPolyBaseOut = "polybase"
         self.fnPointUS = "pointus.shp"
         self.fnPointBase = "pointbase.shp"
+        self.fnDams = "dams.shp"
+        self.fnCsv = "out.csv"
         self.SetDrivers()
         self.InitializeNewDirectory(dirPath)
+        self.dams = DamPoints(self.fnDams)
+        self.csv = CSVWriter(self.fnCsv)
+        self.damData = [None] * len(self.dams.GetFieldNames())
 
 
     def BufferCrest(self):
@@ -76,6 +110,13 @@ class MorphometryExtractor():
             outlyr.CreateFeature(outFeat)
             i += 1
 
+    def CrestElevation(self, index):
+        ds_dem = gdal.Open("DEM_crest"+str(index)+".tif", gdal.GA_ReadOnly)
+        ds_wse = gdal.Open("WSE_crest"+str(index)+".tif", gdal.GA_ReadOnly)
+        stat_dem = ds_dem.GetRasterBand(1).GetStatistics(0,1)
+        stat_wse = ds_wse.GetRasterBand(1).GetStatistics(0,1)
+        return max([stat_dem[1], stat_wse[1]])
+
     def DeleteExistingRasters(self):
         for i in range(1,self.nDams+1,1):
             if os.path.exists("DEM_pond"+str(i)+".tif"):
@@ -110,6 +151,21 @@ class MorphometryExtractor():
         self.SetSpatialRef()
         self.nDams = self.GetDamCount()
 
+    def PondExtent(self, maxWSE, index):
+        ds_wse = gdal.Open("WSE_pond"+str(index)+".tif")
+        ds_wd = gdal.Open("WD_pond"+str(index)+".tif")
+        if os.path.exists("EX_pond"+str(index)+".tif"):
+                self.driverTIF.Delete("EX_pond"+str(index)+".tif")
+        ds_extent = self.driverTIF.Create("EX_pond"+str(index)+".tif", ds_wse.RasterXSize, ds_wse.RasterYSize, 1, gdal.GDT_Float32)
+        ds_extent.SetProjection(ds_wse.GetProjection())
+        wse_data = ds_wse.GetRasterBand(1).ReadAsArray()
+        wd_data = ds_wd.GetRasterBand(1).ReadAsArray()
+        ex_data = np.zeros(wse_data.shape, dtype=np.float32)
+        ex_data[(wse_data > -9999.0) & (wse_data <= maxWSE) & (wd_data > 0.0)] = 1.0
+        ex_data[ex_data <= 0.0] = -9999.0
+        ds_extent.GetRasterBand(1).WriteArray(ex_data)
+        ds_extent.GetRasterBand(1).SetNoDataValue(-9999.0)
+
     def SetDrivers(self):
         self.driverSHP = ogr.GetDriverByName('ESRI Shapefile')
         self.driverTIF = gdal.GetDriverByName('GTiff')
@@ -119,16 +175,6 @@ class MorphometryExtractor():
         lyr = ds.GetLayer()
         self.spatialRef = lyr.GetSpatialRef()
 
-class CSVWriter():
-
-    def __init__(self, csvPath):
-        self.path = csvPath
-
-class DamPoints():
-    def __init__(self, outPath):
-        self.path = outPath
-        self.fieldNames = ["cr_len_m", "pond_a_m2", "pond_v_m3", "p_wse", "b_wse"]
-
 #########################################################
 ########################## RUN ##########################
 #########################################################
@@ -137,5 +183,7 @@ path = r'F:\01_etal\Projects\Modeling\BeaverWaterStorage\wrk_Data\GIS_Data\PondS
 print 'path set'
 extractor = MorphometryExtractor(path)
 print 'extractor initialized'
-extractor.ClipRasters()
+#extractor.ClipRasters()
 print 'rasters clipped'
+print extractor.CrestElevation(1)
+extractor.PondExtent(extractor.CrestElevation(1), 1)
