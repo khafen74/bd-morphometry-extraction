@@ -21,7 +21,7 @@ class DamPoints():
 
     def __init__(self, outPath):
         self.path = outPath
-        self.fieldNames = ["cr_len_m", "p_area_m2", "p_vol_m3", "p_wse", "b_wse", "p_slp_per", "cr_elev", "d_ht_m"]
+        self.fieldNames = ["cr_len_m", "p_area_m2", "p_vol_m3", "p_wse", "b_wse", "p_slp_per", "cr_elev", "b_elev", "d_ht_m"]
 
     def GetFieldNames(self):
         return self.fieldNames
@@ -116,6 +116,15 @@ class MorphometryExtractor():
         stat_dem = ds_dem.GetRasterBand(1).GetStatistics(0,1)
         stat_wse = ds_wse.GetRasterBand(1).GetStatistics(0,1)
         return max([stat_dem[1], stat_wse[1]])
+
+    def DamBaseData(self, index):
+        ds_dem = gdal.Open("DEM_pond"+str(index)+".tif", gdal.GA_ReadOnly)
+        ds_wse = gdal.Open("WSE_pond"+str(index)+".tif", gdal.GA_ReadOnly)
+        ds_wd = gdal.Open("WD_pond"+str(index)+".tif", gdal.GA_ReadOnly)
+        maxWD = ds_wd.GetRasterBand(1).GetStatistics(0,1)[1]
+        dem_data = ds_dem.GetRasterBand(1).ReadAsArray()
+        wse_data = ds_wse.GetRasterBand(1).ReadAsArray()
+        wd_data = ds_wd.GetRasterBand(1).ReadAsArray()
 
     def DeleteExistingRasters(self):
         for i in range(1,self.nDams+1,1):
