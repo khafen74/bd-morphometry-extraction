@@ -21,7 +21,7 @@ class DamPoints():
 
     def __init__(self, outPath):
         self.path = outPath
-        self.fieldNames = ["cr_len_m", "p_area_m2", "p_vol_m3", "p_wse", "b_wse", "p_slp_per", "cr_elev", "b_elev", "d_ht_m", "b_x", "b_y", "u_x", "u_y", "u_elev"]
+        self.fieldNames = ["cr_len_m", "p_area_m2", "p_vol_m3", "wd_max", "p_min", "p_wse", "b_wse", "head_diff", "cr_elev", "b_elev", "d_ht_m", "b_x", "b_y", "u_x", "u_y", "u_elev", "p_slp_per"]
 
     def CreateFields(self):
         print''
@@ -169,6 +169,12 @@ class MorphometryExtractor():
         layer = source.GetLayer()
         return layer.GetFeatureCount()
 
+    def HeadDifference(self):
+        b_wse = self.damData[self.dams.GetFieldNames().index("b_wse")]
+        p_wse = self.damData[self.dams.GetFieldNames().index("p_wse")]
+        if (b_wse != None) & (p_wse != None):
+            self.damData[self.dams.GetFieldNames().index("head_diff")] = (p_wse - b_wse)
+
     def InitializeNewDirectory(self, dirPath):
         self.dir = dirPath
         os.chdir(self.dir)
@@ -180,22 +186,28 @@ class MorphometryExtractor():
         maxWSE = self.damData[self.dams.GetFieldNames().index("cr_elev")]
         ds_wse = gdal.Open("WSE_pond"+str(index)+".tif")
         ds_wd = gdal.Open("WD_pond"+str(index)+".tif")
+        ds_dem = gdal.Open("DEM_pond"+str(index)+".tif")
         if os.path.exists("EX_pond"+str(index)+".tif"):
                 self.driverTIF.Delete("EX_pond"+str(index)+".tif")
         ds_extent = self.driverTIF.Create("EX_pond"+str(index)+".tif", ds_wse.RasterXSize, ds_wse.RasterYSize, 1, gdal.GDT_Float32)
         ds_extent.SetProjection(ds_wse.GetProjection())
         wse_data = ds_wse.GetRasterBand(1).ReadAsArray()
         wd_data = ds_wd.GetRasterBand(1).ReadAsArray()
+        dem_data = ds_dem.GetRasterBand(1).ReadAsArray()
         ex_data = np.zeros(wse_data.shape, dtype=np.float32)
         ex_data[(wse_data > -9999.0) & (wse_data <= maxWSE) & (wd_data > 0.0)] = 1.0
         ex_data[ex_data <= 0.0] = 0.0
         ds_extent.GetRasterBand(1).WriteArray(ex_data)
-        #ds_extent.GetRasterBand(1).SetNoDataValue(0.0)
+        ds_extent.GetRasterBand(1).SetNoDataValue(0.0)
         self.damData[self.dams.GetFieldNames().index("p_area_m2")] = np.sum(ex_data) * self.geot[1] * abs(self.geot[5])
         self.damData[self.dams.GetFieldNames().index("p_vol_m3")] = np.sum(np.multiply(ex_data, wd_data)) * self.geot[1] * abs(self.geot[5])
+        self.damData[self.dams.GetFieldNames().index("wd_max")] = np.max(wd_data)
+        dem_pond = np.multiply(ex_data, dem_data)
+        dem_pond[dem_pond <= 0.0] = np.nan
+        self.damData[self.dams.GetFieldNames().index("p_min")] = np.nanmin(dem_pond)
         wse_ave = np.multiply(ex_data, wse_data)
         wse_ave[wse_ave == 0.0] = np.nan
-        self.damData[self.dams.GetFieldNames().index("p_wse")] = np.nanmean(wse_ave)
+        self.damData[self.dams.GetFieldNames().index("p_wse")] = np.max(np.multiply(ex_data, wse_data))
 
     def SetDrivers(self):
         self.driverSHP = ogr.GetDriverByName('ESRI Shapefile')
@@ -225,5 +237,6 @@ extractor.CrestElevation(1)
 extractor.PondExtent(1)
 extractor.DamBaseData(1)
 extractor.DamHeight()
+extractor.HeadDifference()
 print extractor.dams.GetFieldNames()
 print extractor.damData
