@@ -21,7 +21,7 @@ class DamPoints():
 
     def __init__(self, outPath):
         self.path = outPath
-        self.fieldNames = ["cr_len_m", "p_area_m2", "p_vol_m3", "p_wse", "b_wse", "p_slp_per", "cr_elev", "b_elev", "d_ht_m"]
+        self.fieldNames = ["cr_len_m", "p_area_m2", "p_vol_m3", "p_wse", "b_wse", "p_slp_per", "cr_elev", "b_elev", "d_ht_m", "b_x", "b_y", "u_x", "u_y", "u_elev"]
 
     def GetFieldNames(self):
         return self.fieldNames
@@ -125,6 +125,12 @@ class MorphometryExtractor():
         dem_data = ds_dem.GetRasterBand(1).ReadAsArray()
         wse_data = ds_wse.GetRasterBand(1).ReadAsArray()
         wd_data = ds_wd.GetRasterBand(1).ReadAsArray()
+        col = np.where(wd_data == maxWD)[0][0]
+        row = np.where(wd_data == maxWD)[1][0]
+        wse = wse_data[col, row]
+        elev = dem_data[col, row]
+        x = self.geot[0] + self.geot[1] * col
+        y = self.geot[3] + self.geot[5] * col
 
     def DeleteExistingRasters(self):
         for i in range(1,self.nDams+1,1):
@@ -157,6 +163,7 @@ class MorphometryExtractor():
     def InitializeNewDirectory(self, dirPath):
         self.dir = dirPath
         os.chdir(self.dir)
+        self.SetGeotransform()
         self.SetSpatialRef()
         self.nDams = self.GetDamCount()
 
@@ -179,6 +186,11 @@ class MorphometryExtractor():
         self.driverSHP = ogr.GetDriverByName('ESRI Shapefile')
         self.driverTIF = gdal.GetDriverByName('GTiff')
 
+    def SetGeotransform(self):
+        ds = gdal.Open(self.fnDem, gdal.GA_ReadOnly)
+        self.geot = ds.GetGeoTransform()
+        self.inv_geot = gdal.InvGeoTransform(self.geot)
+
     def SetSpatialRef(self):
         ds = self.driverSHP.Open(self.fnCrest)
         lyr = ds.GetLayer()
@@ -194,5 +206,6 @@ extractor = MorphometryExtractor(path)
 print 'extractor initialized'
 #extractor.ClipRasters()
 print 'rasters clipped'
-print extractor.CrestElevation(1)
-extractor.PondExtent(extractor.CrestElevation(1), 1)
+#print extractor.CrestElevation(1)
+#extractor.PondExtent(extractor.CrestElevation(1), 1)
+extractor.DamBaseData(1)
