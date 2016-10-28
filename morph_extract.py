@@ -120,20 +120,31 @@ class MorphometryExtractor():
         stat_wse = ds_wse.GetRasterBand(1).GetStatistics(0,1)
         self.damData[self.dams.GetFieldNames().index("cr_elev")] = max([stat_dem[1], stat_wse[1]])
 
+    def CrestLength(self, index):
+        src = self.driverSHP.Open(self.fnCrest)
+        if src is None:
+            print 'layer not open'
+        lyr = src.GetLayer()
+        feat = lyr.GetFeature(index)
+        geom = feat.GetGeometryRef()
+        length = geom.Length()
+        self.damData[self.dams.GetFieldNames().index("cr_len_m")] = length
+
     def DamBaseData(self, index):
-        ds_dem = gdal.Open("DEM_pond"+str(index)+".tif", gdal.GA_ReadOnly)
-        ds_wse = gdal.Open("WSE_pond"+str(index)+".tif", gdal.GA_ReadOnly)
-        ds_wd = gdal.Open("WD_pond"+str(index)+".tif", gdal.GA_ReadOnly)
+        ds_dem = gdal.Open("DEM_base"+str(index)+".tif", gdal.GA_ReadOnly)
+        ds_wse = gdal.Open("WSE_base"+str(index)+".tif", gdal.GA_ReadOnly)
+        ds_wd = gdal.Open("WD_base"+str(index)+".tif", gdal.GA_ReadOnly)
+        wdgeot = ds_wd.GetGeoTransform()
         maxWD = ds_wd.GetRasterBand(1).GetStatistics(0,1)[1]
         dem_data = ds_dem.GetRasterBand(1).ReadAsArray()
         wse_data = ds_wse.GetRasterBand(1).ReadAsArray()
         wd_data = ds_wd.GetRasterBand(1).ReadAsArray()
-        col = np.where(wd_data == maxWD)[0][0]
-        row = np.where(wd_data == maxWD)[1][0]
-        self.damData[self.dams.GetFieldNames().index("b_wse")] = wse_data[col, row]
-        self.damData[self.dams.GetFieldNames().index("b_elev")] = dem_data[col, row]
-        self.damData[self.dams.GetFieldNames().index("b_x")] = self.geot[0] + self.geot[1] * col
-        self.damData[self.dams.GetFieldNames().index("b_y")] = self.geot[3] + self.geot[5] * row
+        row = np.where(wd_data == maxWD)[0][0]
+        col = np.where(wd_data == maxWD)[1][0]
+        self.damData[self.dams.GetFieldNames().index("b_wse")] = wse_data[row, col]
+        self.damData[self.dams.GetFieldNames().index("b_elev")] = dem_data[row, col]
+        self.damData[self.dams.GetFieldNames().index("b_x")] = wdgeot[0] + wdgeot[1] * col
+        self.damData[self.dams.GetFieldNames().index("b_y")] = wdgeot[3] + wdgeot[5] * row
 
     def DamHeight(self):
         b_elev = self.damData[self.dams.GetFieldNames().index("b_elev")]
@@ -209,6 +220,17 @@ class MorphometryExtractor():
         wse_ave[wse_ave == 0.0] = np.nan
         self.damData[self.dams.GetFieldNames().index("p_wse")] = np.max(np.multiply(ex_data, wse_data))
 
+    def PondSlope(self):
+        x1 = self.damData[self.dams.GetFieldNames().index("b_x")]
+        y1 = self.damData[self.dams.GetFieldNames().index("b_y")]
+        x2 = self.damData[self.dams.GetFieldNames().index("u_x")]
+        y2 = self.damData[self.dams.GetFieldNames().index("u_y")]
+        z1 = self.damData[self.dams.GetFieldNames().index("b_elev")]
+        z2 = self.damData[self.dams.GetFieldNames().index("u_elev")]
+        dist = ((x2-x1)**2 + (y2-y1)**2)**0.5
+        slp = (z2-z1) / dist
+        self.damData[self.dams.GetFieldNames().index("p_slp_per")] = slp
+
     def SetDrivers(self):
         self.driverSHP = ogr.GetDriverByName('ESRI Shapefile')
         self.driverTIF = gdal.GetDriverByName('GTiff')
@@ -222,6 +244,22 @@ class MorphometryExtractor():
         ds = self.driverSHP.Open(self.fnCrest)
         lyr = ds.GetLayer()
         self.spatialRef = lyr.GetSpatialRef()
+
+    def UpstreamExtentData(self, index):
+        src = self.driverSHP.Open(self.fnCrest)
+        if src is None:
+            print 'layer not open'
+        lyr = src.GetLayer()
+        feat = lyr.GetFeature(index)
+        geom = feat.GetGeometryRef()
+        x = geom.GetX()
+        y = geom.GetY()
+        self.damData[self.dams.GetFieldNames().index("u_x")] = x
+        self.damData[self.dams.GetFieldNames().index("u_y")] = y
+        col, row = gdal.ApplyGeoTransform(self.inv_geot, x, y)
+        ds = gdal.Open(self.fnDem, gdal.GA_ReadOnly)
+        dem = ds.GetRasterBand(1).ReadAsArray()
+        self.damData[self.dams.GetFieldNames().index("u_elev")] = dem[int(row), int(col)]
 
 #########################################################
 ########################## RUN ##########################
@@ -238,5 +276,8 @@ extractor.PondExtent(1)
 extractor.DamBaseData(1)
 extractor.DamHeight()
 extractor.HeadDifference()
+extractor.CrestLength(1)
+extractor.UpstreamExtentData(1)
+extractor.PondSlope()
 print extractor.dams.GetFieldNames()
 print extractor.damData
