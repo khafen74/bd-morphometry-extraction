@@ -19,19 +19,42 @@ class CSVWriter():
 
 class DamPoints():
 
-    def __init__(self, outPath):
+    def __init__(self, outPath, spatialRef):
         self.path = outPath
-        self.fieldNames = ["cr_len_m", "p_area_m2", "p_vol_m3", "wd_max", "p_min", "p_wse", "b_wse", "head_diff", "cr_elev", "b_elev", "d_ht_m", "b_x", "b_y", "u_x", "u_y", "u_elev", "p_slp_per"]
+        self.spatialRef = spatialRef
+        self.fieldNames = ["cr_len_m", "p_area_m2", "p_vol_m3", "wd_max", "p_min", "p_wse", "b_wse", "head_diff", "cr_elev", "b_elev", "d_ht_m", "b_x", "b_y", "u_x", "u_y", "u_elev", "p_slp"]
+        self.SetDrivers()
+        self.CreateShapefile()
+        self.CreateFields()
+
+    def CreateFeature(self, x, y, fieldData):
+        defn = self.lyr.GetLayerDefn()
+        feat = ogr.Feature(defn)
+        point = ogr.Geometry(ogr.wkbPoint)
+        point.AddPoint(x, y)
+        feat.SetGeometry(point)
+        i=0
+        for name in self.fieldNames:
+            feat.SetField(str(name), float(fieldData[i]))
+            i+=1
+        self.lyr.CreateFeature(feat)
 
     def CreateFields(self):
-        print''
+        for name in self.fieldNames:
+            field = ogr.FieldDefn(name, ogr.OFTReal)
+            self.lyr.CreateField(field)
+
+    def CreateShapefile(self):
+        if os.path.exists(self.path):
+                self.driverSHP.DeleteDataSource(self.path)
+        self.ds_out = self.driverSHP.CreateDataSource(self.path)
+        self.lyr = self.ds_out.CreateLayer(self.path, srs=self.spatialRef, geom_type=ogr.wkbPoint)
 
     def GetFieldNames(self):
         return self.fieldNames
 
-    def WriteFieldValues(self, fieldData):
-        #do stuff here
-        print''
+    def SetDrivers(self):
+        self.driverSHP = ogr.GetDriverByName('ESRI Shapefile')
 
 class MorphometryExtractor():
 
@@ -51,10 +74,9 @@ class MorphometryExtractor():
         self.fnCsv = "out.csv"
         self.SetDrivers()
         self.InitializeNewDirectory(dirPath)
-        self.dams = DamPoints(self.fnDams)
+        self.dams = DamPoints(self.fnDams, self.spatialRef)
         self.csv = CSVWriter(self.fnCsv)
-        self.damData = [None] * len(self.dams.GetFieldNames())
-
+        self.ClearDamData()
 
     def BufferCrest(self):
         source = self.driverSHP.Open(self.fnCrest)
@@ -75,6 +97,9 @@ class MorphometryExtractor():
             outFeat.SetGeometry(geomBuffer)
             outlyr.CreateFeature(outFeat)
             i += 1
+
+    def ClearDamData(self):
+        self.damData = [None] * len(self.dams.GetFieldNames())
 
     def ClipRasters(self):
         self.DeleteExistingRasters()
@@ -125,7 +150,7 @@ class MorphometryExtractor():
         if src is None:
             print 'layer not open'
         lyr = src.GetLayer()
-        feat = lyr.GetFeature(index)
+        feat = lyr.GetFeature(index-1)
         geom = feat.GetGeometryRef()
         length = geom.Length()
         self.damData[self.dams.GetFieldNames().index("cr_len_m")] = length
@@ -229,7 +254,22 @@ class MorphometryExtractor():
         z2 = self.damData[self.dams.GetFieldNames().index("u_elev")]
         dist = ((x2-x1)**2 + (y2-y1)**2)**0.5
         slp = (z2-z1) / dist
-        self.damData[self.dams.GetFieldNames().index("p_slp_per")] = slp
+        self.damData[self.dams.GetFieldNames().index("p_slp")] = slp
+
+    def Run(self):
+        self.ClipRasters()
+
+        for i in range(1, self.nDams+1, 1):
+            self.CrestElevation(i)
+            self.PondExtent(i)
+            self.DamBaseData(i)
+            self.DamHeight()
+            self.HeadDifference()
+            self.CrestLength(i)
+            self.UpstreamExtentData(i)
+            self.PondSlope()
+            self.dams.CreateFeature(self.damData[self.dams.GetFieldNames().index("b_x")], self.damData[self.dams.GetFieldNames().index("b_y")], self.damData)
+            self.ClearDamData()
 
     def SetDrivers(self):
         self.driverSHP = ogr.GetDriverByName('ESRI Shapefile')
@@ -250,7 +290,7 @@ class MorphometryExtractor():
         if src is None:
             print 'layer not open'
         lyr = src.GetLayer()
-        feat = lyr.GetFeature(index)
+        feat = lyr.GetFeature(index-1)
         geom = feat.GetGeometryRef()
         x = geom.GetX()
         y = geom.GetY()
@@ -269,15 +309,16 @@ path = r'F:\01_etal\Projects\Modeling\BeaverWaterStorage\wrk_Data\GIS_Data\PondS
 print 'path set'
 extractor = MorphometryExtractor(path)
 print 'extractor initialized'
-extractor.ClipRasters()
-print 'rasters clipped'
-extractor.CrestElevation(1)
-extractor.PondExtent(1)
-extractor.DamBaseData(1)
-extractor.DamHeight()
-extractor.HeadDifference()
-extractor.CrestLength(1)
-extractor.UpstreamExtentData(1)
-extractor.PondSlope()
+extractor.Run()
+# extractor.ClipRasters()
+# print 'rasters clipped'
+# extractor.CrestElevation(1)
+# extractor.PondExtent(1)
+# extractor.DamBaseData(1)
+# extractor.DamHeight()
+# extractor.HeadDifference()
+# extractor.CrestLength(1)
+# extractor.UpstreamExtentData(1)
+# extractor.PondSlope()
 print extractor.dams.GetFieldNames()
 print extractor.damData
