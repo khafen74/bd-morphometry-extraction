@@ -347,8 +347,8 @@ class MorphometryExtractor():
 ########################## RUN ##########################
 #########################################################
 
-path = r'F:\01_etal\Projects\Modeling\BeaverWaterStorage\wrk_Data\GIS_Data\PondSurveys\BridgeCreek\01_Processing\2014'
-pathShp = r'F:\01_etal\Projects\Modeling\BeaverWaterStorage\wrk_Data\GIS_Data\PondSurveys\BridgeCreek\01_Processing\2014\damsout.shp'
+path = r'F:\01_etal\Projects\Modeling\BeaverWaterStorage\wrk_Data\GIS_Data\PondSurveys\BridgeCreek\01_Processing\2013'
+pathShp = r'F:\01_etal\Projects\Modeling\BeaverWaterStorage\wrk_Data\GIS_Data\PondSurveys\BridgeCreek\01_Processing\2013\damsout.shp'
 print 'path set'
 prep = DataPrepper()
 for subdir, dirs, files in os.walk(path):
