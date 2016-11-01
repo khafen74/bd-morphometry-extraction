@@ -56,9 +56,44 @@ class DamPoints():
     def SetDrivers(self):
         self.driverSHP = ogr.GetDriverByName('ESRI Shapefile')
 
+class DataPrepper():
+
+    def __init__(self):
+        self.fnDem = "DEM.tif"
+        self.fnWse = "WSEDEM.tif"
+        self.fnWd = "Water_Depth.tif"
+        self.driverTIF = gdal.GetDriverByName('GTiff')
+
+    def CreateMissingRasters(self, dirPath):
+        self.SetDir(dirPath)
+        if os.path.exists(self.fnDem) and os.path.exists(self.fnWse):
+            self.SetGeot()
+            if not os.path.exists("DEMHillshade.tif"):
+                os.system("gdaldem hillshade -of GTiff " + self.fnDem + " " + "DEMHillshade.tif")
+            if not os.path.exists(self.fnWd):
+                dem = gdal.Open(self.fnDem, gdal.GA_ReadOnly)
+                wse = gdal.Open(self.fnWse, gdal.GA_ReadOnly)
+                dem_data = dem.GetRasterBand(1).ReadAsArray()
+                wse_data = wse.GetRasterBand(1).ReadAsArray()
+                wd_data = np.subtract(wse_data, dem_data)
+                wd_data[wd_data <= 0.0] = -9999.0
+                wd = self.driverTIF.Create(self.fnWd, dem.RasterXSize, dem.RasterYSize, 1, gdal.GDT_Float32)
+                wd.SetGeoTransform(self.geot)
+                wd.SetProjection(dem.GetProjection())
+                wd.GetRasterBand(1).SetNoDataValue(-9999.0)
+                wd.GetRasterBand(1).WriteArray(wd_data)
+
+    def SetDir(self, dirPath):
+        os.chdir(dirPath)
+
+    def SetGeot(self):
+        ds = gdal.Open(self.fnDem, gdal.GA_ReadOnly)
+        self.geot = ds.GetGeoTransform()
+        self.inv_geot = gdal.InvGeoTransform(self.geot)
+
 class MorphometryExtractor():
 
-    def __init__(self, dirPath):
+    def __init__(self):
         self.fnDem = "DEM.tif"
         self.fnWse = "WSEDEM.tif"
         self.fnWd = "Water_Depth.tif"
@@ -73,10 +108,6 @@ class MorphometryExtractor():
         self.fnDams = "dams.shp"
         self.fnCsv = "out.csv"
         self.SetDrivers()
-        self.InitializeNewDirectory(dirPath)
-        self.dams = DamPoints(self.fnDams, self.spatialRef)
-        self.csv = CSVWriter(self.fnCsv)
-        self.ClearDamData()
 
     def BufferCrest(self):
         source = self.driverSHP.Open(self.fnCrest)
@@ -217,6 +248,9 @@ class MorphometryExtractor():
         self.SetGeotransform()
         self.SetSpatialRef()
         self.nDams = self.GetDamCount()
+        self.dams = DamPoints(self.fnDams, self.spatialRef)
+        self.csv = CSVWriter(self.fnCsv)
+        self.ClearDamData()
 
     def PondExtent(self, index):
         maxWSE = self.damData[self.dams.GetFieldNames().index("cr_elev")]
@@ -306,19 +340,16 @@ class MorphometryExtractor():
 #########################################################
 
 path = r'F:\01_etal\Projects\Modeling\BeaverWaterStorage\wrk_Data\GIS_Data\PondSurveys\BridgeCreek\01_Processing\Test'
+path2 = r'F:\01_etal\Projects\Modeling\BeaverWaterStorage\wrk_Data\GIS_Data\PondSurveys\BridgeCreek\01_Processing\2014'
 print 'path set'
-extractor = MorphometryExtractor(path)
-print 'extractor initialized'
-extractor.Run()
-# extractor.ClipRasters()
-# print 'rasters clipped'
-# extractor.CrestElevation(1)
-# extractor.PondExtent(1)
-# extractor.DamBaseData(1)
-# extractor.DamHeight()
-# extractor.HeadDifference()
-# extractor.CrestLength(1)
-# extractor.UpstreamExtentData(1)
-# extractor.PondSlope()
-print extractor.dams.GetFieldNames()
-print extractor.damData
+prep = DataPrepper()
+for subdir, dirs, files in os.walk(path2):
+    print subdir
+    prep.CreateMissingRasters(subdir)
+#extractor = MorphometryExtractor(path2)
+#prep = DataPrepper(path2)
+#print 'extractor initialized'
+#prep.CreateMissingRasters()
+#extractor.Run()
+#print extractor.dams.GetFieldNames()
+#print extractor.damData
