@@ -93,7 +93,7 @@ class DataPrepper():
 
 class MorphometryExtractor():
 
-    def __init__(self):
+    def __init__(self, outShpPath):
         self.fnDem = "DEM.tif"
         self.fnWse = "WSEDEM.tif"
         self.fnWd = "Water_Depth.tif"
@@ -105,8 +105,9 @@ class MorphometryExtractor():
         self.fnPolyBaseOut = "polybase"
         self.fnPointUS = "pointus.shp"
         self.fnPointBase = "pointbase.shp"
-        self.fnDams = "dams.shp"
+        self.fnDams = outShpPath
         self.fnCsv = "out.csv"
+        self.dams = None
         self.SetDrivers()
 
     def BufferCrest(self):
@@ -245,12 +246,16 @@ class MorphometryExtractor():
     def InitializeNewDirectory(self, dirPath):
         self.dir = dirPath
         os.chdir(self.dir)
-        self.SetGeotransform()
-        self.SetSpatialRef()
-        self.nDams = self.GetDamCount()
-        self.dams = DamPoints(self.fnDams, self.spatialRef)
-        self.csv = CSVWriter(self.fnCsv)
-        self.ClearDamData()
+        if os.path.exists(self.fnDem) and os.path.exists(self.fnCrest):
+            self.SetGeotransform()
+            self.SetSpatialRef()
+            self.nDams = self.GetDamCount()
+            if self.dams is None:
+                if os.path.exists(self.fnDams):
+                    self.driverSHP.DeleteDataSource(self.fnDams)
+                self.dams = DamPoints(self.fnDams, self.spatialRef)
+            self.csv = CSVWriter(self.fnCsv)
+            self.ClearDamData()
 
     def PondExtent(self, index):
         maxWSE = self.damData[self.dams.GetFieldNames().index("cr_elev")]
@@ -291,19 +296,22 @@ class MorphometryExtractor():
         self.damData[self.dams.GetFieldNames().index("p_slp")] = slp
 
     def Run(self):
-        self.ClipRasters()
-
-        for i in range(1, self.nDams+1, 1):
-            self.CrestElevation(i)
-            self.PondExtent(i)
-            self.DamBaseData(i)
-            self.DamHeight()
-            self.HeadDifference()
-            self.CrestLength(i)
-            self.UpstreamExtentData(i)
-            self.PondSlope()
-            self.dams.CreateFeature(self.damData[self.dams.GetFieldNames().index("b_x")], self.damData[self.dams.GetFieldNames().index("b_y")], self.damData)
-            self.ClearDamData()
+        if os.path.exists(self.fnCrest) and os.path.exists(self.fnPolyPond) and os.path.exists(self.fnPolyBase) and os.path.exists(self.fnPolyBase):
+            print "running "+self.dir
+            self.ClipRasters()
+            for i in range(1, self.nDams+1, 1):
+                self.CrestElevation(i)
+                self.PondExtent(i)
+                self.DamBaseData(i)
+                self.DamHeight()
+                self.HeadDifference()
+                self.CrestLength(i)
+                self.UpstreamExtentData(i)
+                self.PondSlope()
+                self.dams.CreateFeature(self.damData[self.dams.GetFieldNames().index("b_x")], self.damData[self.dams.GetFieldNames().index("b_y")], self.damData)
+                self.ClearDamData()
+        else:
+            print self.dir + " does not contain necessary input shapefiles"
 
     def SetDrivers(self):
         self.driverSHP = ogr.GetDriverByName('ESRI Shapefile')
@@ -339,13 +347,19 @@ class MorphometryExtractor():
 ########################## RUN ##########################
 #########################################################
 
-path = r'F:\01_etal\Projects\Modeling\BeaverWaterStorage\wrk_Data\GIS_Data\PondSurveys\BridgeCreek\01_Processing\Test'
-path2 = r'F:\01_etal\Projects\Modeling\BeaverWaterStorage\wrk_Data\GIS_Data\PondSurveys\BridgeCreek\01_Processing\2014'
+path = r'F:\01_etal\Projects\Modeling\BeaverWaterStorage\wrk_Data\GIS_Data\PondSurveys\BridgeCreek\01_Processing\2014'
+pathShp = r'F:\01_etal\Projects\Modeling\BeaverWaterStorage\wrk_Data\GIS_Data\PondSurveys\BridgeCreek\01_Processing\2014\damsout.shp'
 print 'path set'
 prep = DataPrepper()
-for subdir, dirs, files in os.walk(path2):
+for subdir, dirs, files in os.walk(path):
     print subdir
     prep.CreateMissingRasters(subdir)
+
+extractor = MorphometryExtractor(pathShp)
+for subdir, dirs, files in os.walk(path):
+    extractor.InitializeNewDirectory(subdir)
+    extractor.Run()
+
 #extractor = MorphometryExtractor(path2)
 #prep = DataPrepper(path2)
 #print 'extractor initialized'
