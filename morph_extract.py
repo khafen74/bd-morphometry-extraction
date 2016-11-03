@@ -172,10 +172,13 @@ class MorphometryExtractor():
 
     def CrestElevation(self, index):
         ds_dem = gdal.Open("DEM_crest"+str(index)+".tif", gdal.GA_ReadOnly)
-        ds_wse = gdal.Open("WSE_crest"+str(index)+".tif", gdal.GA_ReadOnly)
         stat_dem = ds_dem.GetRasterBand(1).GetStatistics(0,1)
-        stat_wse = ds_wse.GetRasterBand(1).GetStatistics(0,1)
-        self.damData[self.dams.GetFieldNames().index("cr_elev")] = max([stat_dem[1], stat_wse[1]])
+        if os.path.exists("WSE_crest"+str(index)+".tif"):
+            ds_wse = gdal.Open("WSE_crest"+str(index)+".tif", gdal.GA_ReadOnly)
+            stat_wse = ds_wse.GetRasterBand(1).GetStatistics(0,1)
+            self.damData[self.dams.GetFieldNames().index("cr_elev")] = max([stat_dem[1], stat_wse[1]])
+        else:
+            self.damData[self.dams.GetFieldNames().index("cr_elev")] = stat_dem[1]
 
     def CrestLength(self, index):
         src = self.driverSHP.Open(self.fnCrest)
@@ -189,19 +192,18 @@ class MorphometryExtractor():
 
     def DamBaseData(self, index):
         ds_dem = gdal.Open("DEM_base"+str(index)+".tif", gdal.GA_ReadOnly)
-        ds_wse = gdal.Open("WSE_base"+str(index)+".tif", gdal.GA_ReadOnly)
-        ds_wd = gdal.Open("WD_base"+str(index)+".tif", gdal.GA_ReadOnly)
-        wdgeot = ds_wd.GetGeoTransform()
-        maxWD = ds_wd.GetRasterBand(1).GetStatistics(0,1)[1]
+        geot = ds_dem.GetGeoTransform()
+        minDem = ds_dem.GetRasterBand(1).GetStatistics(0,1)[0]
         dem_data = ds_dem.GetRasterBand(1).ReadAsArray()
-        wse_data = ds_wse.GetRasterBand(1).ReadAsArray()
-        wd_data = ds_wd.GetRasterBand(1).ReadAsArray()
-        row = np.where(wd_data == maxWD)[0][0]
-        col = np.where(wd_data == maxWD)[1][0]
-        self.damData[self.dams.GetFieldNames().index("b_wse")] = wse_data[row, col]
+        row = np.where(dem_data == minDem)[0][0]
+        col = np.where(dem_data == minDem)[1][0]
         self.damData[self.dams.GetFieldNames().index("b_elev")] = dem_data[row, col]
-        self.damData[self.dams.GetFieldNames().index("b_x")] = wdgeot[0] + wdgeot[1] * col
-        self.damData[self.dams.GetFieldNames().index("b_y")] = wdgeot[3] + wdgeot[5] * row
+        self.damData[self.dams.GetFieldNames().index("b_x")] = geot[0] + geot[1] * col
+        self.damData[self.dams.GetFieldNames().index("b_y")] = geot[3] + geot[5] * row
+        if os.path.exists("WSE_base"+str(index)+".tif"):
+            ds_wse = gdal.Open("WSE_base"+str(index)+".tif", gdal.GA_ReadOnly)
+            wse_data = ds_wse.GetRasterBand(1).ReadAsArray()
+            self.damData[self.dams.GetFieldNames().index("b_wse")] = wse_data[row, col]
 
     def DamHeight(self):
         b_elev = self.damData[self.dams.GetFieldNames().index("b_elev")]
