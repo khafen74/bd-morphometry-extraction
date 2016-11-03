@@ -124,7 +124,7 @@ class MorphometryExtractor():
             outlyr = outds.CreateLayer(self.fnCrestBuf, srs=self.spatialRef, geom_type=ogr.wkbPolygon)
             outDfn = outlyr.GetLayerDefn()
             ingeom = feature.GetGeometryRef()
-            geomBuffer = ingeom.Buffer(0.3)
+            geomBuffer = ingeom.Buffer(0.25)
             outFeat = ogr.Feature(outDfn)
             outFeat.SetGeometry(geomBuffer)
             outlyr.CreateFeature(outFeat)
@@ -260,31 +260,41 @@ class MorphometryExtractor():
             self.ClearDamData()
 
     def PondExtent(self, index):
-        maxWSE = self.damData[self.dams.GetFieldNames().index("cr_elev")]
-        ds_wse = gdal.Open("WSE_pond"+str(index)+".tif")
-        ds_wd = gdal.Open("WD_pond"+str(index)+".tif")
-        ds_dem = gdal.Open("DEM_pond"+str(index)+".tif")
-        if os.path.exists("EX_pond"+str(index)+".tif"):
-                self.driverTIF.Delete("EX_pond"+str(index)+".tif")
-        ds_extent = self.driverTIF.Create("EX_pond"+str(index)+".tif", ds_wse.RasterXSize, ds_wse.RasterYSize, 1, gdal.GDT_Float32)
-        ds_extent.SetProjection(ds_wse.GetProjection())
-        wse_data = ds_wse.GetRasterBand(1).ReadAsArray()
-        wd_data = ds_wd.GetRasterBand(1).ReadAsArray()
-        dem_data = ds_dem.GetRasterBand(1).ReadAsArray()
-        ex_data = np.zeros(wse_data.shape, dtype=np.float32)
-        ex_data[(wse_data > -9999.0) & (wse_data <= maxWSE) & (wd_data > 0.0)] = 1.0
-        ex_data[ex_data <= 0.0] = 0.0
-        ds_extent.GetRasterBand(1).WriteArray(ex_data)
-        ds_extent.GetRasterBand(1).SetNoDataValue(0.0)
-        self.damData[self.dams.GetFieldNames().index("p_area_m2")] = np.sum(ex_data) * self.geot[1] * abs(self.geot[5])
-        self.damData[self.dams.GetFieldNames().index("p_vol_m3")] = np.sum(np.multiply(ex_data, wd_data)) * self.geot[1] * abs(self.geot[5])
-        self.damData[self.dams.GetFieldNames().index("wd_max")] = np.max(wd_data)
-        dem_pond = np.multiply(ex_data, dem_data)
-        dem_pond[dem_pond <= 0.0] = np.nan
-        self.damData[self.dams.GetFieldNames().index("p_min")] = np.nanmin(dem_pond)
-        wse_ave = np.multiply(ex_data, wse_data)
-        wse_ave[wse_ave == 0.0] = np.nan
-        self.damData[self.dams.GetFieldNames().index("p_wse")] = np.max(np.multiply(ex_data, wse_data))
+        if self.damData[self.dams.GetFieldNames().index("cr_elev")] is not None and os.path.exists("DEM_pond"+str(index)+".tif"):
+            maxWSE = self.damData[self.dams.GetFieldNames().index("cr_elev")]
+            ds_dem = gdal.Open("DEM_pond"+str(index)+".tif")
+            dem_data = ds_dem.GetRasterBand(1).ReadAsArray()
+            if os.path.exists("EX_pond"+str(index)+".tif"):
+                    self.driverTIF.Delete("EX_pond"+str(index)+".tif")
+            ds_extent = self.driverTIF.Create("EX_pond"+str(index)+".tif", ds_dem.RasterXSize, ds_dem.RasterYSize, 1, gdal.GDT_Float32)
+            ds_extent.SetProjection(ds_dem.GetProjection())
+            ex_data = np.zeros(dem_data.shape, dtype=np.float32)
+            if os.path.exists("WD_pond"+str(index)+".tif"):
+                wd = True
+                ds_wd = gdal.Open("WD_pond"+str(index)+".tif")
+                wd_data = ds_wd.GetRasterBand(1).ReadAsArray()
+            if os.path.exists("WSE_pond"+str(index)+".tif"):
+                wse = True
+                ds_wse = gdal.Open("WSE_pond"+str(index)+".tif")
+                wse_data = ds_wse.GetRasterBand(1).ReadAsArray()
+                wse_ave = np.multiply(ex_data, wse_data)
+                wse_ave[wse_ave == 0.0] = np.nan
+                self.damData[self.dams.GetFieldNames().index("p_wse")] = np.max(np.multiply(ex_data, wse_data))
+            if wse and wd:
+                ex_data[(wse_data > -9999.0) & (wse_data <= maxWSE) & (wd_data > 0.0)] = 1.0
+            else:
+                ex_data[(dem_data > -9999.9) & (dem_data <= maxWSE)] = 1.0
+                wd_data = np.subtract(maxWSE, dem_data)
+
+            ex_data[ex_data <= 0.0] = 0.0
+            ds_extent.GetRasterBand(1).WriteArray(ex_data)
+            ds_extent.GetRasterBand(1).SetNoDataValue(0.0)
+            self.damData[self.dams.GetFieldNames().index("p_area_m2")] = np.sum(ex_data) * self.geot[1] * abs(self.geot[5])
+            self.damData[self.dams.GetFieldNames().index("p_vol_m3")] = np.sum(np.multiply(ex_data, wd_data)) * self.geot[1] * abs(self.geot[5])
+            self.damData[self.dams.GetFieldNames().index("wd_max")] = np.max(wd_data)
+            dem_pond = np.multiply(ex_data, dem_data)
+            dem_pond[dem_pond <= 0.0] = np.nan
+            self.damData[self.dams.GetFieldNames().index("p_min")] = np.nanmin(dem_pond)
 
     def PondSlope(self):
         x1 = self.damData[self.dams.GetFieldNames().index("b_x")]
