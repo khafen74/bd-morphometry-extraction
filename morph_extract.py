@@ -35,6 +35,8 @@ class DamPoints():
         feat.SetGeometry(point)
         i=0
         for name in self.fieldNames:
+            if fieldData[i] is None:
+                fieldData[i] = -9999.0
             feat.SetField(str(name), float(fieldData[i]))
             i+=1
         self.lyr.CreateFeature(feat)
@@ -140,13 +142,14 @@ class MorphometryExtractor():
         self.BufferCrest()
 
         for i in range(1,self.nDams+1,1):
-            self.ClipRasterPolygon(self.fnDem, self.fnPolyPondOut+str(i)+".shp", "DEM_pond"+str(i)+".tif")
+            if os.path.exists(self.fnPolyPondOut+str(i)+".shp"):
+                self.ClipRasterPolygon(self.fnDem, self.fnPolyPondOut+str(i)+".shp", "DEM_pond"+str(i)+".tif")
+                self.ClipRasterPolygon(self.fnWse, self.fnPolyPondOut+str(i)+".shp", "WSE_pond"+str(i)+".tif")
+                self.ClipRasterPolygon(self.fnWd, self.fnPolyPondOut+str(i)+".shp", "WD_pond"+str(i)+".tif")
             self.ClipRasterPolygon(self.fnDem, self.fnPolyBaseOut+str(i)+".shp", "DEM_base"+str(i)+".tif")
             self.ClipRasterPolygon(self.fnDem, self.fnCrestBuf+str(i)+".shp", "DEM_crest"+str(i)+".tif")
-            self.ClipRasterPolygon(self.fnWse, self.fnPolyPondOut+str(i)+".shp", "WSE_pond"+str(i)+".tif")
             self.ClipRasterPolygon(self.fnWse, self.fnPolyBaseOut+str(i)+".shp", "WSE_base"+str(i)+".tif")
             self.ClipRasterPolygon(self.fnWse, self.fnCrestBuf+str(i)+".shp", "WSE_crest"+str(i)+".tif")
-            self.ClipRasterPolygon(self.fnWd, self.fnPolyPondOut+str(i)+".shp", "WD_pond"+str(i)+".tif")
             self.ClipRasterPolygon(self.fnWd, self.fnPolyBaseOut+str(i)+".shp", "WD_base"+str(i)+".tif")
             self.ClipRasterPolygon(self.fnWd, self.fnCrestBuf+str(i)+".shp", "WD_crest"+str(i)+".tif")
 
@@ -202,8 +205,11 @@ class MorphometryExtractor():
         self.damData[self.dams.GetFieldNames().index("b_y")] = geot[3] + geot[5] * row
         if os.path.exists("WSE_base"+str(index)+".tif"):
             ds_wse = gdal.Open("WSE_base"+str(index)+".tif", gdal.GA_ReadOnly)
+            wsgeot = ds_wse.GetGeoTransform()
+            newRow = round((wsgeot[3] - self.damData[self.dams.GetFieldNames().index("b_y")]) / abs(wsgeot[5]))
+            newCol = round((self.damData[self.dams.GetFieldNames().index("b_x")] - wsgeot[0]) / abs(wsgeot[1]))
             wse_data = ds_wse.GetRasterBand(1).ReadAsArray()
-            self.damData[self.dams.GetFieldNames().index("b_wse")] = wse_data[row, col]
+            self.damData[self.dams.GetFieldNames().index("b_wse")] = wse_data[newRow, newCol]
 
     def DamHeight(self):
         b_elev = self.damData[self.dams.GetFieldNames().index("b_elev")]
@@ -268,7 +274,6 @@ class MorphometryExtractor():
                     self.driverTIF.Delete("EX_pond"+str(index)+".tif")
             ds_extent = self.driverTIF.Create("EX_pond"+str(index)+".tif", ds_dem.RasterXSize, ds_dem.RasterYSize, 1, gdal.GDT_Float32)
             ds_extent.SetProjection(ds_dem.GetProjection())
-            ex_data = np.zeros(dem_data.shape, dtype=np.float32)
             if os.path.exists("WD_pond"+str(index)+".tif"):
                 wd = True
                 ds_wd = gdal.Open("WD_pond"+str(index)+".tif")
@@ -277,12 +282,14 @@ class MorphometryExtractor():
                 wse = True
                 ds_wse = gdal.Open("WSE_pond"+str(index)+".tif")
                 wse_data = ds_wse.GetRasterBand(1).ReadAsArray()
+                ex_data = np.zeros(wse_data.shape, dtype=np.float32)
                 wse_ave = np.multiply(ex_data, wse_data)
                 wse_ave[wse_ave == 0.0] = np.nan
                 self.damData[self.dams.GetFieldNames().index("p_wse")] = np.max(np.multiply(ex_data, wse_data))
             if wse and wd:
                 ex_data[(wse_data > -9999.0) & (wse_data <= maxWSE) & (wd_data > 0.0)] = 1.0
             else:
+                ex_data = np.zeros(dem_data.shape, dtype=np.float32)
                 ex_data[(dem_data > -9999.9) & (dem_data <= maxWSE)] = 1.0
                 wd_data = np.subtract(maxWSE, dem_data)
 
@@ -292,9 +299,12 @@ class MorphometryExtractor():
             self.damData[self.dams.GetFieldNames().index("p_area_m2")] = np.sum(ex_data) * self.geot[1] * abs(self.geot[5])
             self.damData[self.dams.GetFieldNames().index("p_vol_m3")] = np.sum(np.multiply(ex_data, wd_data)) * self.geot[1] * abs(self.geot[5])
             self.damData[self.dams.GetFieldNames().index("wd_max")] = np.max(wd_data)
-            dem_pond = np.multiply(ex_data, dem_data)
-            dem_pond[dem_pond <= 0.0] = np.nan
-            self.damData[self.dams.GetFieldNames().index("p_min")] = np.nanmin(dem_pond)
+            if ex_data.shape == dem_data.shape:
+                dem_pond = np.multiply(ex_data, dem_data)
+                dem_pond[dem_pond <= 0.0] = np.nan
+                self.damData[self.dams.GetFieldNames().index("p_min")] = np.nanmin(dem_pond)
+            else:
+                self.damData[self.dams.GetFieldNames().index("p_min")] = -9999.0
 
     def PondSlope(self):
         x1 = self.damData[self.dams.GetFieldNames().index("b_x")]
@@ -303,9 +313,10 @@ class MorphometryExtractor():
         y2 = self.damData[self.dams.GetFieldNames().index("u_y")]
         z1 = self.damData[self.dams.GetFieldNames().index("b_elev")]
         z2 = self.damData[self.dams.GetFieldNames().index("u_elev")]
-        dist = ((x2-x1)**2 + (y2-y1)**2)**0.5
-        slp = (z2-z1) / dist
-        self.damData[self.dams.GetFieldNames().index("p_slp")] = slp
+        if x2 is not None and y2 is not None and z1 is not None and z2 is not None:
+            dist = ((x2-x1)**2 + (y2-y1)**2)**0.5
+            slp = (z2-z1) / dist
+            self.damData[self.dams.GetFieldNames().index("p_slp")] = slp
 
     def Run(self):
         if os.path.exists(self.fnCrest) and os.path.exists(self.fnPolyPond) and os.path.exists(self.fnPolyBase) and os.path.exists(self.fnPolyBase):
@@ -313,15 +324,25 @@ class MorphometryExtractor():
             self.ClipRasters()
             for i in range(1, self.nDams+1, 1):
                 self.CrestElevation(i)
+                print "crest done"
                 self.PondExtent(i)
+                print "pond extent done"
                 self.DamBaseData(i)
+                print "base done"
                 self.DamHeight()
+                print "height done"
                 self.HeadDifference()
+                print "height done"
                 self.CrestLength(i)
+                print "crest length done"
                 self.UpstreamExtentData(i)
+                print "upstream done"
                 self.PondSlope()
+                print "slope done"
                 self.dams.CreateFeature(self.damData[self.dams.GetFieldNames().index("b_x")], self.damData[self.dams.GetFieldNames().index("b_y")], self.damData)
+                print "feature created"
                 self.ClearDamData()
+                print str(i) + " done"
         else:
             print self.dir + " does not contain necessary input shapefiles"
 
@@ -340,20 +361,21 @@ class MorphometryExtractor():
         self.spatialRef = lyr.GetSpatialRef()
 
     def UpstreamExtentData(self, index):
-        src = self.driverSHP.Open(self.fnCrest)
+        src = self.driverSHP.Open(self.fnPointUS)
         if src is None:
             print 'layer not open'
         lyr = src.GetLayer()
-        feat = lyr.GetFeature(index-1)
-        geom = feat.GetGeometryRef()
-        x = geom.GetX()
-        y = geom.GetY()
-        self.damData[self.dams.GetFieldNames().index("u_x")] = x
-        self.damData[self.dams.GetFieldNames().index("u_y")] = y
-        col, row = gdal.ApplyGeoTransform(self.inv_geot, x, y)
-        ds = gdal.Open(self.fnDem, gdal.GA_ReadOnly)
-        dem = ds.GetRasterBand(1).ReadAsArray()
-        self.damData[self.dams.GetFieldNames().index("u_elev")] = dem[int(row), int(col)]
+        if ((index-1) < lyr.GetFeatureCount()):
+            feat = lyr.GetFeature(index-1)
+            geom = feat.GetGeometryRef()
+            x = geom.GetX()
+            y = geom.GetY()
+            self.damData[self.dams.GetFieldNames().index("u_x")] = x
+            self.damData[self.dams.GetFieldNames().index("u_y")] = y
+            col, row = gdal.ApplyGeoTransform(self.inv_geot, x, y)
+            ds = gdal.Open(self.fnDem, gdal.GA_ReadOnly)
+            dem = ds.GetRasterBand(1).ReadAsArray()
+            self.damData[self.dams.GetFieldNames().index("u_elev")] = dem[int(row), int(col)]
 
 #########################################################
 ########################## RUN ##########################
@@ -362,15 +384,16 @@ class MorphometryExtractor():
 path = r'F:\01_etal\Projects\Modeling\BeaverWaterStorage\wrk_Data\GIS_Data\PondSurveys\BridgeCreek\01_Processing\2013'
 pathShp = r'F:\01_etal\Projects\Modeling\BeaverWaterStorage\wrk_Data\GIS_Data\PondSurveys\BridgeCreek\01_Processing\2013\damsout.shp'
 print 'path set'
-prep = DataPrepper()
-for subdir, dirs, files in os.walk(path):
-    print subdir
-    prep.CreateMissingRasters(subdir)
+# prep = DataPrepper()
+# for subdir, dirs, files in os.walk(path):
+#     print subdir
+#     prep.CreateMissingRasters(subdir)
 
 extractor = MorphometryExtractor(pathShp)
 for subdir, dirs, files in os.walk(path):
     extractor.InitializeNewDirectory(subdir)
     extractor.Run()
+print 'done'
 
 #extractor = MorphometryExtractor(path2)
 #prep = DataPrepper(path2)
