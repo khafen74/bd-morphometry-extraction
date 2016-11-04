@@ -248,8 +248,10 @@ class MorphometryExtractor():
     def HeadDifference(self):
         b_wse = self.damData[self.dams.GetFieldNames().index("b_wse")]
         p_wse = self.damData[self.dams.GetFieldNames().index("p_wse")]
-        if (b_wse != None) & (p_wse != None):
+        if (b_wse != None) & (p_wse != None) & (p_wse > 0.0):
             self.damData[self.dams.GetFieldNames().index("head_diff")] = (p_wse - b_wse)
+        else:
+            self.damData[self.dams.GetFieldNames().index("head_diff")] = -9999.0
 
     def InitializeNewDirectory(self, dirPath):
         self.dir = dirPath
