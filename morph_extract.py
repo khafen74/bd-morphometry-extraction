@@ -68,11 +68,11 @@ class DataPrepper():
 
     def CreateMissingRasters(self, dirPath):
         self.SetDir(dirPath)
-        if os.path.exists(self.fnDem) and os.path.exists(self.fnWse):
+        if os.path.exists(self.fnDem):
             self.SetGeot()
             if not os.path.exists("DEMHillshade.tif"):
                 os.system("gdaldem hillshade -of GTiff " + self.fnDem + " " + "DEMHillshade.tif")
-            if not os.path.exists(self.fnWd):
+            if not os.path.exists(self.fnWd) and os.path.exists(self.fnWse):
                 dem = gdal.Open(self.fnDem, gdal.GA_ReadOnly)
                 wse = gdal.Open(self.fnWse, gdal.GA_ReadOnly)
                 dem_data = dem.GetRasterBand(1).ReadAsArray()
@@ -142,16 +142,20 @@ class MorphometryExtractor():
         self.BufferCrest()
 
         for i in range(1,self.nDams+1,1):
-            if os.path.exists(self.fnPolyPondOut+str(i)+".shp"):
-                self.ClipRasterPolygon(self.fnDem, self.fnPolyPondOut+str(i)+".shp", "DEM_pond"+str(i)+".tif")
-                self.ClipRasterPolygon(self.fnWse, self.fnPolyPondOut+str(i)+".shp", "WSE_pond"+str(i)+".tif")
-                self.ClipRasterPolygon(self.fnWd, self.fnPolyPondOut+str(i)+".shp", "WD_pond"+str(i)+".tif")
             self.ClipRasterPolygon(self.fnDem, self.fnPolyBaseOut+str(i)+".shp", "DEM_base"+str(i)+".tif")
             self.ClipRasterPolygon(self.fnDem, self.fnCrestBuf+str(i)+".shp", "DEM_crest"+str(i)+".tif")
-            self.ClipRasterPolygon(self.fnWse, self.fnPolyBaseOut+str(i)+".shp", "WSE_base"+str(i)+".tif")
-            self.ClipRasterPolygon(self.fnWse, self.fnCrestBuf+str(i)+".shp", "WSE_crest"+str(i)+".tif")
-            self.ClipRasterPolygon(self.fnWd, self.fnPolyBaseOut+str(i)+".shp", "WD_base"+str(i)+".tif")
-            self.ClipRasterPolygon(self.fnWd, self.fnCrestBuf+str(i)+".shp", "WD_crest"+str(i)+".tif")
+            if os.path.exists(self.fnPolyPondOut+str(i)+".shp"):
+                self.ClipRasterPolygon(self.fnDem, self.fnPolyPondOut+str(i)+".shp", "DEM_pond"+str(i)+".tif")
+                if os.path.exists(self.fnWse):
+                    self.ClipRasterPolygon(self.fnWse, self.fnPolyPondOut+str(i)+".shp", "WSE_pond"+str(i)+".tif")
+                if os.path.exists(self.fnWd):
+                    self.ClipRasterPolygon(self.fnWd, self.fnPolyPondOut+str(i)+".shp", "WD_pond"+str(i)+".tif")
+            if os.path.exists(self.fnWse):
+                self.ClipRasterPolygon(self.fnWse, self.fnPolyBaseOut+str(i)+".shp", "WSE_base"+str(i)+".tif")
+                self.ClipRasterPolygon(self.fnWse, self.fnCrestBuf+str(i)+".shp", "WSE_crest"+str(i)+".tif")
+            if os.path.exists(self.fnWd):
+                self.ClipRasterPolygon(self.fnWd, self.fnPolyBaseOut+str(i)+".shp", "WD_base"+str(i)+".tif")
+                self.ClipRasterPolygon(self.fnWd, self.fnCrestBuf+str(i)+".shp", "WD_crest"+str(i)+".tif")
 
     def ClipRasterPolygon(self, rasterPath, polyPath, outPath):
         os.system("gdalwarp -dstnodata -9999 -q -cutline " + polyPath + " -tr 0.1 0.1 -of GTiff " + rasterPath + " " + outPath)
@@ -269,6 +273,8 @@ class MorphometryExtractor():
 
     def PondExtent(self, index):
         if self.damData[self.dams.GetFieldNames().index("cr_elev")] is not None and os.path.exists("DEM_pond"+str(index)+".tif"):
+            wd = False
+            wse = False
             maxWSE = self.damData[self.dams.GetFieldNames().index("cr_elev")]
             ds_dem = gdal.Open("DEM_pond"+str(index)+".tif")
             dem_data = ds_dem.GetRasterBand(1).ReadAsArray()
@@ -317,7 +323,7 @@ class MorphometryExtractor():
         y2 = self.damData[self.dams.GetFieldNames().index("u_y")]
         z1 = self.damData[self.dams.GetFieldNames().index("b_elev")]
         z2 = self.damData[self.dams.GetFieldNames().index("u_elev")]
-        if x2 is not None and y2 is not None and z1 is not None and z2 is not None:
+        if x2 is not None and y2 is not None and z1 is not None and z2 is not None and z2 > 0.0:
             dist = ((x2-x1)**2 + (y2-y1)**2)**0.5
             slp = (z2-z1) / dist
             self.damData[self.dams.GetFieldNames().index("p_slp")] = slp
@@ -385,8 +391,10 @@ class MorphometryExtractor():
 ########################## RUN ##########################
 #########################################################
 
-path = r'F:\01_etal\Projects\Modeling\BeaverWaterStorage\wrk_Data\GIS_Data\PondSurveys\BridgeCreek\01_Processing\2013'
-pathShp = r'F:\01_etal\Projects\Modeling\BeaverWaterStorage\wrk_Data\GIS_Data\PondSurveys\BridgeCreek\01_Processing\2013\damsout.shp'
+#path = r'F:\01_etal\Projects\Modeling\BeaverWaterStorage\wrk_Data\GIS_Data\PondSurveys\BridgeCreek\01_Processing\2013'
+path = r'F:\01_etal\Projects\Modeling\BeaverWaterStorage\wrk_Data\GIS_Data\PondSurveys\SpawnCreek\01_Processing\2009'
+#pathShp = r'F:\01_etal\Projects\Modeling\BeaverWaterStorage\wrk_Data\GIS_Data\PondSurveys\BridgeCreek\01_Processing\2013\damsout.shp'
+pathShp = r'F:\01_etal\Projects\Modeling\BeaverWaterStorage\wrk_Data\GIS_Data\PondSurveys\SpawnCreek\01_Processing\2009\damsout.shp'
 print 'path set'
 # prep = DataPrepper()
 # for subdir, dirs, files in os.walk(path):
