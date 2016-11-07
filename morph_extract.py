@@ -287,7 +287,6 @@ class MorphometryExtractor():
                 ex_data = np.zeros(wse_data.shape, dtype=np.float32)
                 wse_ave = np.multiply(ex_data, wse_data)
                 wse_ave[wse_ave == 0.0] = np.nan
-                self.damData[self.dams.GetFieldNames().index("p_wse")] = np.max(np.multiply(ex_data, wse_data))
             if wse and wd:
                 ex_data[(wse_data > -9999.0) & (wse_data <= maxWSE) & (wd_data > 0.0)] = 1.0
             else:
@@ -296,8 +295,11 @@ class MorphometryExtractor():
                 wd_data = np.subtract(maxWSE, dem_data)
 
             ex_data[ex_data <= 0.0] = 0.0
+            if wse:
+                self.damData[self.dams.GetFieldNames().index("p_wse")] = np.max(np.multiply(ex_data, wse_data))
             ds_extent.GetRasterBand(1).WriteArray(ex_data)
             ds_extent.GetRasterBand(1).SetNoDataValue(0.0)
+            ds_extent.SetGeoTransform(ds_dem.GetGeoTransform())
             self.damData[self.dams.GetFieldNames().index("p_area_m2")] = np.sum(ex_data) * self.geot[1] * abs(self.geot[5])
             self.damData[self.dams.GetFieldNames().index("p_vol_m3")] = np.sum(np.multiply(ex_data, wd_data)) * self.geot[1] * abs(self.geot[5])
             self.damData[self.dams.GetFieldNames().index("wd_max")] = np.max(wd_data)
