@@ -22,7 +22,8 @@ class DamPoints():
     def __init__(self, outPath, spatialRef):
         self.path = outPath
         self.spatialRef = spatialRef
-        self.fieldNames = ["cr_len_m", "p_area_m2", "p_vol_m3", "wd_max", "p_min", "p_wse", "b_wse", "head_diff", "cr_elev", "b_elev", "d_ht_m", "b_x", "b_y", "u_x", "u_y", "u_elev", "p_slp"]
+        self.fieldNames = ["cr_len_m", "p_area_m2", "p_vol_m3", "wd_max", "p_min", "p_wse", "b_wse", "head_diff", "cr_elev", "b_elev", "d_ht_m", "b_x", "b_y", "u_x", "u_y", "u_elev", "p_slp",
+                           "max_area", "max_vol", "max_dep"]
         self.SetDrivers()
         self.CreateShapefile()
         self.CreateFields()
@@ -300,20 +301,22 @@ class MorphometryExtractor():
                 wse_ave[wse_ave == 0.0] = np.nan
             if wse and wd:
                 ex_data[(wse_data > -9999.0) & (wse_data <= maxWSE) & (wd_data > 0.0)] = 1.0
-            else:
-                ex_data = np.zeros(dem_data.shape, dtype=np.float32)
-                ex_data[(dem_data > -9999.0) & (dem_data <= maxWSE)] = 1.0
-                wd_data = np.subtract(maxWSE, dem_data)
-                wd_data[(wd_data < 0.0) | (wd_data > 100.0)] = 0.0
-
-            ex_data[ex_data <= 0.0] = 0.0
-            if wse:
+                ex_data[ex_data <= 0.0] = 0.0
+                self.damData[self.dams.GetFieldNames().index("p_area_m2")] = np.sum(ex_data) * self.geot[1] * abs(self.geot[5])
+                self.damData[self.dams.GetFieldNames().index("p_vol_m3")] = np.sum(np.multiply(ex_data, wd_data)) * self.geot[1] * abs(self.geot[5])
+                self.damData[self.dams.GetFieldNames().index("wd_max")] = np.max(wd_data)
                 self.damData[self.dams.GetFieldNames().index("p_wse")] = np.max(np.multiply(ex_data, wse_data))
+            ex_data = np.zeros(dem_data.shape, dtype=np.float32)
+            ex_data[(dem_data > -9999.0) & (dem_data <= maxWSE)] = 1.0
+            wd_data = np.subtract(maxWSE, dem_data)
+            wd_data[(wd_data < 0.0) | (wd_data > 100.0)] = 0.0
+            ex_data[ex_data <= 0.0] = 0.0
             ds_extent.GetRasterBand(1).WriteArray(ex_data)
             ds_extent.GetRasterBand(1).SetNoDataValue(0.0)
-            self.damData[self.dams.GetFieldNames().index("p_area_m2")] = np.sum(ex_data) * self.geot[1] * abs(self.geot[5])
-            self.damData[self.dams.GetFieldNames().index("p_vol_m3")] = np.sum(np.multiply(ex_data, wd_data)) * self.geot[1] * abs(self.geot[5])
-            self.damData[self.dams.GetFieldNames().index("wd_max")] = np.max(wd_data)
+            self.damData[self.dams.GetFieldNames().index("max_area")] = np.sum(ex_data) * self.geot[1] * abs(self.geot[5])
+            self.damData[self.dams.GetFieldNames().index("max_vol")] = np.sum(np.multiply(ex_data, wd_data)) * self.geot[1] * abs(self.geot[5])
+            self.damData[self.dams.GetFieldNames().index("max_dep")] = np.max(wd_data)
+
             if ex_data.shape == dem_data.shape:
                 dem_pond = np.multiply(ex_data, dem_data)
                 dem_pond[dem_pond <= 0.0] = np.nan
