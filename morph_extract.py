@@ -96,6 +96,7 @@ class DataPrepper():
 class MorphometryExtractor():
 
     def __init__(self, outShpPath):
+        self.wse = False
         self.fnDem = "DEM.tif"
         self.fnWse = "WSEDEM.tif"
         self.fnWd = "Water_Depth.tif"
@@ -178,11 +179,14 @@ class MorphometryExtractor():
             i += 1
 
     def CrestElevation(self, index):
+        self.wse = False
         ds_dem = gdal.Open("DEM_crest"+str(index)+".tif", gdal.GA_ReadOnly)
         stat_dem = ds_dem.GetRasterBand(1).GetStatistics(0,1)
         if os.path.exists("WSE_crest"+str(index)+".tif"):
             ds_wse = gdal.Open("WSE_crest"+str(index)+".tif", gdal.GA_ReadOnly)
             stat_wse = ds_wse.GetRasterBand(1).GetStatistics(0,1)
+            if sum(stat_wse) > 0.0:
+                self.wse = True
             self.damData[self.dams.GetFieldNames().index("cr_elev")] = max([stat_dem[1], stat_wse[1]])
         else:
             self.damData[self.dams.GetFieldNames().index("cr_elev")] = stat_dem[1]
@@ -287,7 +291,7 @@ class MorphometryExtractor():
                 wd = True
                 ds_wd = gdal.Open("WD_pond"+str(index)+".tif")
                 wd_data = ds_wd.GetRasterBand(1).ReadAsArray()
-            if os.path.exists("WSE_pond"+str(index)+".tif"):
+            if os.path.exists("WSE_pond"+str(index)+".tif") and self.wse:
                 wse = True
                 ds_wse = gdal.Open("WSE_pond"+str(index)+".tif")
                 wse_data = ds_wse.GetRasterBand(1).ReadAsArray()
@@ -300,7 +304,7 @@ class MorphometryExtractor():
                 ex_data = np.zeros(dem_data.shape, dtype=np.float32)
                 ex_data[(dem_data > -9999.0) & (dem_data <= maxWSE)] = 1.0
                 wd_data = np.subtract(maxWSE, dem_data)
-                wd_data[wd_data < 0.0] = 0.0
+                wd_data[(wd_data < 0.0) | (wd_data > 100.0)] = 0.0
 
             ex_data[ex_data <= 0.0] = 0.0
             if wse:
@@ -394,8 +398,10 @@ class MorphometryExtractor():
 
 #path = r'F:\01_etal\Projects\Modeling\BeaverWaterStorage\wrk_Data\GIS_Data\PondSurveys\BridgeCreek\01_Processing\2013'
 path = r'F:\01_etal\Projects\Modeling\BeaverWaterStorage\wrk_Data\GIS_Data\PondSurveys\SpawnCreek\01_Processing\2009'
+#path = r'F:\01_etal\Projects\Modeling\BeaverWaterStorage\wrk_Data\GIS_Data\PondSurveys\CurtisCreek\01_Processing\2012'
 #pathShp = r'F:\01_etal\Projects\Modeling\BeaverWaterStorage\wrk_Data\GIS_Data\PondSurveys\BridgeCreek\01_Processing\2013\damsout.shp'
 pathShp = r'F:\01_etal\Projects\Modeling\BeaverWaterStorage\wrk_Data\GIS_Data\PondSurveys\SpawnCreek\01_Processing\2009\damsout.shp'
+#pathShp = r'F:\01_etal\Projects\Modeling\BeaverWaterStorage\wrk_Data\GIS_Data\PondSurveys\CurtisCreek\01_Processing\2012\damsout.shp'
 print 'path set'
 # prep = DataPrepper()
 # for subdir, dirs, files in os.walk(path):
