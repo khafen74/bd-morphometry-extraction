@@ -23,7 +23,7 @@ class DamPoints():
         self.path = outPath
         self.spatialRef = spatialRef
         self.fieldNames = ["cr_len_m", "p_area_m2", "p_vol_m3", "wd_max", "p_min", "p_wse", "b_wse", "head_diff", "cr_elev", "b_elev", "d_ht_m", "b_x", "b_y", "u_x", "u_y", "u_elev", "p_slp",
-                           "max_area", "max_vol", "max_dep"]
+                           "max_area", "max_vol", "max_dep", "slp_ave", "relief", "dem_std"]
         self.SetDrivers()
         self.CreateShapefile()
         self.CreateFields()
@@ -73,6 +73,8 @@ class DataPrepper():
             self.SetGeot()
             if not os.path.exists("DEMHillshade.tif"):
                 os.system("gdaldem hillshade -of GTiff " + self.fnDem + " " + "DEMHillshade.tif")
+            if not os.path.exists("slope.tif"):
+                os.system("gdaldem slope -of GTiff " + self.fnDem + " " + "slope.tif")
             if not os.path.exists(self.fnWd) and os.path.exists(self.fnWse):
                 dem = gdal.Open(self.fnDem, gdal.GA_ReadOnly)
                 wse = gdal.Open(self.fnWse, gdal.GA_ReadOnly)
@@ -148,6 +150,7 @@ class MorphometryExtractor():
             self.ClipRasterPolygon(self.fnDem, self.fnCrestBuf+str(i)+".shp", "DEM_crest"+str(i)+".tif")
             if os.path.exists(self.fnPolyPondOut+str(i)+".shp"):
                 self.ClipRasterPolygon(self.fnDem, self.fnPolyPondOut+str(i)+".shp", "DEM_pond"+str(i)+".tif")
+                self.ClipRasterPolygon("slope.tif", self.fnPolyPondOut+str(i)+".shp", "slope_pond"+str(i)+".tif")
                 if os.path.exists(self.fnWse):
                     self.ClipRasterPolygon(self.fnWse, self.fnPolyPondOut+str(i)+".shp", "WSE_pond"+str(i)+".tif")
                 if os.path.exists(self.fnWd):
@@ -230,6 +233,8 @@ class MorphometryExtractor():
         for i in range(1,self.nDams+1,1):
             if os.path.exists("DEM_pond"+str(i)+".tif"):
                 self.driverTIF.Delete("DEM_pond"+str(i)+".tif")
+            if os.path.exists("slope_pond"+str(i)+".tif"):
+                self.driverTIF.Delete("slope_pond"+str(i)+".tif")
             if os.path.exists("DEM_base"+str(i)+".tif"):
                 self.driverTIF.Delete("DEM_base"+str(i)+".tif")
             if os.path.exists("DEM_crest"+str(i)+".tif"):
@@ -324,7 +329,7 @@ class MorphometryExtractor():
             else:
                 self.damData[self.dams.GetFieldNames().index("p_min")] = -9999.0
 
-    def PondSlope(self):
+    def PondSlope(self, index):
         x1 = self.damData[self.dams.GetFieldNames().index("b_x")]
         y1 = self.damData[self.dams.GetFieldNames().index("b_y")]
         x2 = self.damData[self.dams.GetFieldNames().index("u_x")]
@@ -335,11 +340,29 @@ class MorphometryExtractor():
             dist = ((x2-x1)**2 + (y2-y1)**2)**0.5
             slp = (z2-z1) / dist
             self.damData[self.dams.GetFieldNames().index("p_slp")] = slp
+        if os.path.exists("slope_pond"+str(index)+".tif"):
+            ds_ex = gdal.Open("EX_pond"+str(index)+".tif")
+            ds_slp = gdal.Open("slope_pond"+str(index)+".tif")
+            ex_data = ds_ex.GetRasterBand(1).ReadAsArray()
+            slp_data = ds_slp.GetRasterBand(1).ReadAsArray()
+            slp_data[(ex_data <= 0.0) | (slp_data < 0.0)] = np.nan
+            self.damData[self.dams.GetFieldNames().index("slp_ave")] = np.nanmean(slp_data)
+
+    def Relief(self, index):
+        if os.path.exists("DEM_pond"+str(index)+".tif"):
+            ds_ex = gdal.Open("EX_pond"+str(index)+".tif")
+            ds_dem = gdal.Open("DEM_pond"+str(index)+".tif")
+            ex_data = ds_ex.GetRasterBand(1).ReadAsArray()
+            dem_data = ds_dem.GetRasterBand(1).ReadAsArray()
+            dem_data[(ex_data <= 0.0) | (dem_data < 0.0)] = np.nan
+            self.damData[self.dams.GetFieldNames().index("dem_std")] = np.nanstd(dem_data)
+            self.damData[self.dams.GetFieldNames().index("relief")] = np.nanmax(dem_data) - np.nanmin(dem_data)
 
     def Run(self):
         if os.path.exists(self.fnCrest) and os.path.exists(self.fnPolyPond) and os.path.exists(self.fnPolyBase) and os.path.exists(self.fnPolyBase):
             print "running "+self.dir
             self.ClipRasters()
+            print 'done clipping'
             for i in range(1, self.nDams+1, 1):
                 self.CrestElevation(i)
                 print "crest done"
@@ -355,8 +378,10 @@ class MorphometryExtractor():
                 print "crest length done"
                 self.UpstreamExtentData(i)
                 print "upstream done"
-                self.PondSlope()
+                self.PondSlope(i)
                 print "slope done"
+                self.Relief(i)
+                print "relief done"
                 self.dams.CreateFeature(self.damData[self.dams.GetFieldNames().index("b_x")], self.damData[self.dams.GetFieldNames().index("b_y")], self.damData)
                 print "feature created"
                 self.ClearDamData()
@@ -399,11 +424,11 @@ class MorphometryExtractor():
 ########################## RUN ##########################
 #########################################################
 
-#path = r'F:\01_etal\Projects\Modeling\BeaverWaterStorage\wrk_Data\GIS_Data\PondSurveys\BridgeCreek\01_Processing\2013'
-path = r'F:\01_etal\Projects\Modeling\BeaverWaterStorage\wrk_Data\GIS_Data\PondSurveys\SpawnCreek\01_Processing\2009'
+path = r'F:\01_etal\Projects\Modeling\BeaverWaterStorage\wrk_Data\GIS_Data\PondSurveys\BridgeCreek\01_Processing\2013'
+#path = r'F:\01_etal\Projects\Modeling\BeaverWaterStorage\wrk_Data\GIS_Data\PondSurveys\SpawnCreek\01_Processing\2009'
 #path = r'F:\01_etal\Projects\Modeling\BeaverWaterStorage\wrk_Data\GIS_Data\PondSurveys\CurtisCreek\01_Processing\2012'
-#pathShp = r'F:\01_etal\Projects\Modeling\BeaverWaterStorage\wrk_Data\GIS_Data\PondSurveys\BridgeCreek\01_Processing\2013\damsout.shp'
-pathShp = r'F:\01_etal\Projects\Modeling\BeaverWaterStorage\wrk_Data\GIS_Data\PondSurveys\SpawnCreek\01_Processing\2009\damsout.shp'
+pathShp = r'F:\01_etal\Projects\Modeling\BeaverWaterStorage\wrk_Data\GIS_Data\PondSurveys\BridgeCreek\01_Processing\2013\damsout.shp'
+#pathShp = r'F:\01_etal\Projects\Modeling\BeaverWaterStorage\wrk_Data\GIS_Data\PondSurveys\SpawnCreek\01_Processing\2009\damsout.shp'
 #pathShp = r'F:\01_etal\Projects\Modeling\BeaverWaterStorage\wrk_Data\GIS_Data\PondSurveys\CurtisCreek\01_Processing\2012\damsout.shp'
 print 'path set'
 # prep = DataPrepper()
